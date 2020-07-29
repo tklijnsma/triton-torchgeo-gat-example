@@ -37,20 +37,23 @@ RUN pushd pytorch_sparse &&\
     popd
 
 RUN git clone https://github.com/rusty1s/pytorch_geometric.git
-
 RUN pushd pytorch_geometric && pip install -e . && popd
 
-RUN pushd pytorch_geometric/examples/jit &&\
-    echo "torch.jit.save(model, 'gat_test.pt')" >> gat.py &&\
-    python gat.py >> train.log &&\
-    mv gat_test.pt /workspace/model.pt
+# Make the jit model
+COPY make_jit_model /make_jit_model
+RUN pushd /make_jit_model &&\
+    python jit_selfcontained_edgenetwithcategories.py model_checkpoint_EdgeNetWithCategories_264403_5b5c05404f_csharma.best.pth.tar &&\
+    popd
 
-FROM alpine:latest
+# FROM alpine:latest
+FROM nvcr.io/nvidia/tritonserver:20.06-v1-py3 
 
-RUN mkdir -p /artifacts
+RUN mkdir -p /usr/lib/
+COPY --from=builder /workspace/libtorchscatter.so /usr/lib/
+COPY --from=builder /workspace/libtorchsparse.so /usr/lib/
+COPY --from=builder /workspace/libtorchcluster.so /usr/lib/
+COPY --from=builder /workspace/libtorchsplineconv.so /usr/lib/
+RUN mkdir -p /models/edgenetwithcats/1/
+COPY --from=builder /make_jit_model/edgenetwithcats.pt /models/edgenetwithcats/1/model.pt
+COPY artifacts/models/edgenetwithcategories_test/config.pbtxt /models/edgenetwithcats/config.pbtxt
 
-COPY --from=builder /workspace/libtorchscatter.so /artifacts
-COPY --from=builder /workspace/libtorchsparse.so /artifacts
-COPY --from=builder /workspace/libtorchcluster.so /artifacts
-COPY --from=builder /workspace/libtorchsplineconv.so /artifacts
-COPY --from=builder /workspace/model.pt /artifacts/model.pt
